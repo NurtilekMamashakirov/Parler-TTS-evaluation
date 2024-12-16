@@ -1,13 +1,12 @@
 import io
 import random
 
-import librosa
-import numpy as np
 import pandas as pd
 import requests
 import soundfile as sf
 import torch
 
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 class AudioDataset(torch.utils.data.Dataset):
     def __init__(self, length, random_seed=None):

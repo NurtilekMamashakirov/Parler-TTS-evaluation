@@ -6,23 +6,24 @@ from torchmetrics.audio import PerceptualEvaluationSpeechQuality, ShortTimeObjec
     ScaleInvariantSignalDistortionRatio
 from torchmetrics.audio.dnsmos import DeepNoiseSuppressionMeanOpinionScore
 
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 class DNSMOSEvaluator:
-    def __init__(self, model_tts, tokenizer, device=torch.device('cpu')):
+    def __init__(self, model_tts, tokenizer):
         super().__init__()
         self.model_tts = model_tts.to(
             device)
         self.tokenizer = tokenizer
         self.dnsmos = DeepNoiseSuppressionMeanOpinionScore(fs=self.model_tts.config.sampling_rate, personalized=False)
-        self.device = device
         self.overall_moses = []
         self.signal_qualities = []
         self.background_noises = []
         self.linguistic_artifacts = []
 
     def evaluate(self, prompt: str, description: str):
-        input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(self.device)
-        prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
+        input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
+        prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).cpu()
         metric = self.dnsmos(audio)
         self.overall_moses.append(metric[0])
@@ -53,16 +54,15 @@ class DNSMOSEvaluator:
 
 
 class WEREvaluator:
-    def __init__(self, model_tts, tokenizer, pipeline_stt, device=torch.device('cpu')):
+    def __init__(self, model_tts, tokenizer, pipeline_stt):
         self.model_tts = model_tts.to(device)
         self.tokenizer = tokenizer
         self.pipeline_stt = pipeline_stt
-        self.device = device
         self.word_error_rates = []
 
     def evaluate(self, prompt: str, description: str):
-        input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(self.device)
-        prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
+        input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
+        prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).cpu().numpy().squeeze()
         hypothesis_prompt = self.pipeline_stt(audio)['text']
         word_error_rate = wer(reference=prompt, hypothesis=hypothesis_prompt)
@@ -84,20 +84,19 @@ class WEREvaluator:
 
 
 class ObjectiveMetricsEvaluator:
-    def __init__(self, model_tts, tokenizer, device=torch.device('cpu')):
+    def __init__(self, model_tts, tokenizer):
         self.model_tts = model_tts
         self.tokenizer = tokenizer
-        self.device = device
         self.perceptual_evaluation_of_speech_qualities = []
         self.scale_invariant_signal_to_distortion_ratios = []
         self.short_time_objective_intelligibility = []
 
     def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor):
-        input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(self.device)
-        prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(self.device)
+        input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
+        prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         pred_audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(
-            self.device).squeeze(0)
-        target_audio = torch.tensor(target_audio).to(self.device)
+            device).squeeze(0)
+        target_audio = target_audio.to(device)
         if len(pred_audio) > len(target_audio):
             dif = len(pred_audio) - len(target_audio)
             target_audio = torch.cat((target_audio, torch.zeros(dif)), dim=0)

@@ -65,5 +65,5 @@ def evaluate_objective_metrics(tests_quantity: int, random_seed: int = None):
         print("Objective metrics:")
         print(f"pesq: {objective_metrics['pesq']}")
         print(f"si-sdr: {objective_metrics['si_sdr']}")
-        print(f"stoi: {objective_metrics['stoi']}")
+        print(f"stoi: {objective_metrics['stoi']}\n")
     objective_metrics_evaluator.visualize()
