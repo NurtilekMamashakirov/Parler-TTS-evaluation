@@ -1,3 +1,4 @@
+import librosa
 import numpy as np
 import torch
 from jiwer import wer
@@ -97,13 +98,17 @@ class ObjectiveMetricsEvaluator:
         pred_audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(
             device).squeeze(0)
         target_audio = target_audio.to(device)
+        pred_audio = torch.from_numpy(librosa.resample(pred_audio.cpu().numpy(), orig_sr=44100, target_sr=16000)).to(
+            device)
+        target_audio = torch.from_numpy(
+            librosa.resample(target_audio.cpu().numpy(), orig_sr=48000, target_sr=16000)).to(device)
         if len(pred_audio) > len(target_audio):
             dif = len(pred_audio) - len(target_audio)
             target_audio = torch.cat((target_audio, torch.zeros(dif)), dim=0)
         if len(pred_audio) < len(target_audio):
             dif = len(target_audio) - len(pred_audio)
             pred_audio = torch.cat((pred_audio, torch.zeros(dif)), dim=0)
-        pesq_metric = PerceptualEvaluationSpeechQuality(fs=16000, mode="nb")
+        pesq_metric = PerceptualEvaluationSpeechQuality(fs=16000, mode="wb")
         pesq = pesq_metric(pred_audio, target_audio)
         self.perceptual_evaluation_of_speech_qualities.append(float(pesq))
 
