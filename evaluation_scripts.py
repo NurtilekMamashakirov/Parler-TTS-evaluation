@@ -31,6 +31,8 @@ def evaluate_wer(prompts=None, describes=None):
     model_stt = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-large-v3-turbo", torch_dtype=torch_dtype,
                                                           low_cpu_mem_usage=True, use_safetensors=True)
     model_stt.to(device)
+    model_stt.generation_config.language = "en"
+    # model_stt.generation_config.task = "transcribe"
     processor = AutoProcessor.from_pretrained("openai/whisper-large-v3-turbo")
     pipe = pipeline(
         "automatic-speech-recognition",

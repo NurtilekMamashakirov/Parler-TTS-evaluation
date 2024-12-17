@@ -5,7 +5,7 @@ prompts = [
     "I believe I can fly. I believe I can touch the sky.",
     "How many times did you rewrite that code? I think it is an excellent example of discipline",
     "There is so many lies about me. I think it is false",
-    "Do you think Cristiano can win the World Cup in 2026 in the age of 40"
+    "Do you think Cristiano can win the World Cup in twenty twenty six in the age of fourty"
 ]
 describes = ["Jenny's voice is quite monotone and very clear in this recording, yet the sound is quite confined. "
              "She speaks very slowly."] * len(prompts)

@@ -24,7 +24,7 @@ class DNSMOSEvaluator:
     def evaluate(self, prompt: str, description: str):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
-        audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).cpu()
+        audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(device)
         metric = self.dnsmos(audio)
         self.overall_moses.append(metric[0])
         self.signal_qualities.append(metric[1])
@@ -64,7 +64,7 @@ class WEREvaluator:
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).cpu().numpy().squeeze()
-        hypothesis_prompt = self.pipeline_stt(audio)['text']
+        hypothesis_prompt = self.pipeline_stt(audio)["text"]
         word_error_rate = wer(reference=prompt, hypothesis=hypothesis_prompt)
         self.word_error_rates.append(word_error_rate)
         return word_error_rate
@@ -105,15 +105,15 @@ class ObjectiveMetricsEvaluator:
             pred_audio = torch.cat((pred_audio, torch.zeros(dif)), dim=0)
         pesq_metric = PerceptualEvaluationSpeechQuality(fs=16000, mode="nb")
         pesq = pesq_metric(pred_audio, target_audio)
-        self.perceptual_evaluation_of_speech_qualities.append(pesq)
+        self.perceptual_evaluation_of_speech_qualities.append(float(pesq))
 
-        si_sdr_metric = ScaleInvariantSignalDistortionRatio()
+        si_sdr_metric = ScaleInvariantSignalDistortionRatio().to(device)
         si_sdr = si_sdr_metric(pred_audio, target_audio)
-        self.scale_invariant_signal_to_distortion_ratios.append(si_sdr)
+        self.scale_invariant_signal_to_distortion_ratios.append(float(si_sdr))
 
-        stoi_metric = ShortTimeObjectiveIntelligibility(fs=self.model_tts.config.sampling_rate, extended=False)
+        stoi_metric = ShortTimeObjectiveIntelligibility(fs=self.model_tts.config.sampling_rate, extended=False).to(device)
         stoi = stoi_metric(pred_audio, target_audio)
-        self.short_time_objective_intelligibility.append(stoi)
+        self.short_time_objective_intelligibility.append(float(stoi))
         return {'pesq': pesq, 'si_sdr': si_sdr, 'stoi': stoi}
 
     def visualize(self):
