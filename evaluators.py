@@ -1,4 +1,3 @@
-import librosa
 import numpy as np
 import torch
 from jiwer import wer
@@ -6,6 +5,8 @@ from matplotlib import pyplot as plt
 from torchmetrics.audio import PerceptualEvaluationSpeechQuality, ShortTimeObjectiveIntelligibility, \
     ScaleInvariantSignalDistortionRatio
 from torchmetrics.audio.dnsmos import DeepNoiseSuppressionMeanOpinionScore
+
+from utils import receive_audios
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -17,41 +18,22 @@ class DNSMOSEvaluator:
             device)
         self.tokenizer = tokenizer
         self.dnsmos = DeepNoiseSuppressionMeanOpinionScore(fs=self.model_tts.config.sampling_rate, personalized=False)
-        self.overall_moses = []
-        self.signal_qualities = []
-        self.background_noises = []
-        self.linguistic_artifacts = []
+        self.dnsmos_results = []
 
     def evaluate(self, prompt: str, description: str):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(device)
         metric = self.dnsmos(audio)
-        self.overall_moses.append(metric[0])
-        self.signal_qualities.append(metric[1])
-        self.background_noises.append(metric[2])
-        self.linguistic_artifacts.append(metric[3])
-        return self.dnsmos(audio)
+        self.dnsmos_results.append(metric)
+        return metric
 
     def visualize(self):
-        plt.figure(figsize=(12, 6))
-        plt.scatter(np.arange(len(self.overall_moses)), self.overall_moses, label='Overall MOS')
-        plt.scatter(np.arange(len(self.overall_moses)), self.signal_qualities, label='Signal Qualities')
-        plt.scatter(np.arange(len(self.overall_moses)), self.background_noises, label='Background Noise')
-        plt.scatter(np.arange(len(self.overall_moses)), self.linguistic_artifacts, label='Linguistic')
-        plt.title('DNSMOS Evaluation')
-        plt.xlabel('tests')
-        plt.ylabel('scores')
-        plt.xticks(np.arange(len(self.overall_moses)))
-        plt.legend(loc='lower right')
-        plt.grid()
+        self.dnsmos.plot(self.dnsmos_results)
         plt.show()
 
     def remove_history(self):
-        self.overall_moses = []
-        self.signal_qualities = []
-        self.background_noises = []
-        self.linguistic_artifacts = []
+        self.dnsmos_results = []
 
 
 class WEREvaluator:
@@ -91,6 +73,9 @@ class ObjectiveMetricsEvaluator:
         self.perceptual_evaluation_of_speech_qualities = []
         self.scale_invariant_signal_to_distortion_ratios = []
         self.short_time_objective_intelligibility = []
+        self.pesq_metric = PerceptualEvaluationSpeechQuality(fs=16000, mode="wb").to(device)
+        self.si_sdr_metric = ScaleInvariantSignalDistortionRatio().to(device)
+        self.stoi_metric = ShortTimeObjectiveIntelligibility(fs=16000, extended=False).to(device)
 
     def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
@@ -98,69 +83,22 @@ class ObjectiveMetricsEvaluator:
         pred_audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(
             device).squeeze(0)
         target_audio = target_audio.to(device)
-        pred_audio = torch.from_numpy(librosa.resample(pred_audio.cpu().numpy(), orig_sr=44100, target_sr=16000)).to(
-            device)
-        target_audio = torch.from_numpy(
-            librosa.resample(target_audio.cpu().numpy(), orig_sr=48000, target_sr=16000)).to(device)
-        if len(pred_audio) > len(target_audio):
-            dif = len(pred_audio) - len(target_audio)
-            target_audio = torch.cat((target_audio, torch.zeros(dif)), dim=0)
-        if len(pred_audio) < len(target_audio):
-            dif = len(target_audio) - len(pred_audio)
-            pred_audio = torch.cat((pred_audio, torch.zeros(dif)), dim=0)
-        pesq_metric = PerceptualEvaluationSpeechQuality(fs=16000, mode="wb")
-        pesq = pesq_metric(pred_audio, target_audio)
-        self.perceptual_evaluation_of_speech_qualities.append(float(pesq))
+        pred_audio, target_audio = receive_audios(pred_audio, target_audio)
 
-        si_sdr_metric = ScaleInvariantSignalDistortionRatio().to(device)
-        si_sdr = si_sdr_metric(pred_audio, target_audio)
-        self.scale_invariant_signal_to_distortion_ratios.append(float(si_sdr))
+        pesq = self.pesq_metric(pred_audio, target_audio)
+        self.perceptual_evaluation_of_speech_qualities.append(pesq)
 
-        stoi_metric = ShortTimeObjectiveIntelligibility(fs=self.model_tts.config.sampling_rate, extended=False).to(device)
-        stoi = stoi_metric(pred_audio, target_audio)
-        self.short_time_objective_intelligibility.append(float(stoi))
+        si_sdr = self.si_sdr_metric(pred_audio, target_audio)
+        self.scale_invariant_signal_to_distortion_ratios.append(si_sdr)
+
+        stoi = self.stoi_metric(pred_audio, target_audio)
+        self.short_time_objective_intelligibility.append(stoi)
         return {'pesq': pesq, 'si_sdr': si_sdr, 'stoi': stoi}
 
     def visualize(self):
-        plt.figure(figsize=(12, 6))
-        plt.scatter(np.arange(len(self.perceptual_evaluation_of_speech_qualities)),
-                    self.perceptual_evaluation_of_speech_qualities, label='PESQ')
-        average_pesq = np.array(self.perceptual_evaluation_of_speech_qualities).mean()
-        plt.plot(np.arange(len(self.perceptual_evaluation_of_speech_qualities)),
-                 len(self.perceptual_evaluation_of_speech_qualities) * [average_pesq],
-                 label=f'Average score = {average_pesq:.2f}')
-        plt.title('PESQ metric')
-        plt.xlabel('tests')
-        plt.ylabel('PESQ score')
-        plt.xticks(np.arange(len(self.perceptual_evaluation_of_speech_qualities)))
-        plt.legend(loc='lower right')
-        plt.grid()
+        self.pesq_metric.plot(self.perceptual_evaluation_of_speech_qualities)
         plt.show()
-        plt.figure(figsize=(12, 6))
-        plt.scatter(np.arange(len(self.scale_invariant_signal_to_distortion_ratios)),
-                    self.scale_invariant_signal_to_distortion_ratios, label='SI-SDR')
-        average_si_sdr = np.array(self.scale_invariant_signal_to_distortion_ratios).mean()
-        plt.plot(np.arange(len(self.scale_invariant_signal_to_distortion_ratios)),
-                 len(self.scale_invariant_signal_to_distortion_ratios) * [average_si_sdr],
-                 label=f'Average score = {average_si_sdr:.2f}')
-        plt.title('SI-SDR metric')
-        plt.xlabel('tests')
-        plt.ylabel('SI-SDR scores')
-        plt.xticks(np.arange(len(self.perceptual_evaluation_of_speech_qualities)))
-        plt.legend(loc='lower right')
-        plt.grid()
+        self.si_sdr_metric.plot(self.scale_invariant_signal_to_distortion_ratios)
         plt.show()
-        plt.figure(figsize=(12, 6))
-        plt.scatter(np.arange(len(self.short_time_objective_intelligibility)),
-                    self.short_time_objective_intelligibility, label='STOI')
-        average_stoi = np.array(self.short_time_objective_intelligibility).mean()
-        plt.plot(np.arange(len(self.short_time_objective_intelligibility)),
-                 len(self.short_time_objective_intelligibility) * [average_stoi],
-                 label=f'Average score = {average_stoi:.2f}')
-        plt.title('STOI metric')
-        plt.xlabel('tests')
-        plt.ylabel('STOI score')
-        plt.xticks(np.arange(len(self.perceptual_evaluation_of_speech_qualities)))
-        plt.legend(loc='lower right')
-        plt.grid()
+        self.stoi_metric.plot(self.short_time_objective_intelligibility)
         plt.show()

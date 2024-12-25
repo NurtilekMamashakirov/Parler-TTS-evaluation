@@ -1,12 +1,14 @@
 import io
 import random
 
+import librosa
 import pandas as pd
 import requests
 import soundfile as sf
 import torch
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
 
 class AudioDataset(torch.utils.data.Dataset):
     def __init__(self, length, random_seed=None):
@@ -40,6 +42,21 @@ class AudioDataset(torch.utils.data.Dataset):
         row = self.X[index]
         dict_row = {"transcription": row[0], "transcription_normalised": row[1], "text_description": row[2]}
         return dict_row, self.y[index]
+
+
+def receive_audios(pred_audio, target_audio):
+    target_audio = target_audio.to(device)
+    pred_audio = torch.from_numpy(librosa.resample(pred_audio.cpu().numpy(), orig_sr=44100, target_sr=16000)).to(
+        device)
+    target_audio = torch.from_numpy(
+        librosa.resample(target_audio.cpu().numpy(), orig_sr=48000, target_sr=16000)).to(device)
+    if len(pred_audio) > len(target_audio):
+        dif = len(pred_audio) - len(target_audio)
+        target_audio = torch.cat((target_audio, torch.zeros(dif).to(device)), dim=0)
+    else:
+        dif = len(target_audio) - len(pred_audio)
+        pred_audio = torch.cat((pred_audio, torch.zeros(dif).to(device)), dim=0)
+    return pred_audio, target_audio
 
 
 def generate_prompts_with_gigachat(prompts_quantity):
