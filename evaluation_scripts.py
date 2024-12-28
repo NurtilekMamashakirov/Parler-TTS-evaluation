@@ -1,9 +1,10 @@
 import torch
 from parler_tts import ParlerTTSForConditionalGeneration
-from transformers import AutoTokenizer, AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
+from transformers import AutoTokenizer, AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline, Wav2Vec2FeatureExtractor, \
+    WavLMForXVector
 
-from evaluators import DNSMOSEvaluator, WEREvaluator, ObjectiveMetricsEvaluator
-from utils import generate_prompts_with_gigachat, generate_describes_with_gigachat, AudioDataset
+from evaluators import DNSMOSEvaluator, WEREvaluator, ObjectiveMetricsEvaluator, SimilarityEvaluator
+from utils import generate_prompts_with_gigachat, generate_describes_with_gigachat, prepare_dataset
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -32,7 +33,6 @@ def evaluate_wer(prompts=None, describes=None):
                                                           low_cpu_mem_usage=True, use_safetensors=True)
     model_stt.to(device)
     model_stt.generation_config.language = "en"
-    # model_stt.generation_config.task = "transcribe"
     processor = AutoProcessor.from_pretrained("openai/whisper-large-v3-turbo")
     pipe = pipeline(
         "automatic-speech-recognition",
@@ -57,15 +57,27 @@ def evaluate_wer(prompts=None, describes=None):
 
 
 def evaluate_objective_metrics(tests_quantity: int, random_seed: int = None):
-    dataset = AudioDataset(tests_quantity, random_seed=random_seed)
+    dataset = prepare_dataset(tests_quantity, random_seed)
     objective_metrics_evaluator = ObjectiveMetricsEvaluator(model_tts, tokenizer)
-    for i in range(len(dataset)):
-        features, target_audio = dataset[i]
-        objective_metrics = objective_metrics_evaluator.evaluate(features["transcription_normalised"],
-                                                                 features["text_description"],
-                                                                 torch.tensor(target_audio))
+    for i in range(tests_quantity):
+        objective_metrics = objective_metrics_evaluator.evaluate(dataset["transcription"][i],
+                                                                 dataset["text_description"][i],
+                                                                 torch.tensor(dataset["audio"][i]["array"]))
         print("Objective metrics:")
         print(f"pesq: {objective_metrics['pesq']}")
         print(f"si-sdr: {objective_metrics['si_sdr']}")
         print(f"stoi: {objective_metrics['stoi']}\n")
     objective_metrics_evaluator.visualize()
+
+
+def evaluate_similarity(tests_quantity: int, random_seed: int = None):
+    dataset = prepare_dataset(tests_quantity, random_seed)
+    feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained('microsoft/wavlm-base-sv')
+    model = WavLMForXVector.from_pretrained('microsoft/wavlm-base-sv')
+    similarity_evaluator = SimilarityEvaluator(model_tts, tokenizer, model, feature_extractor)
+    for i in range(tests_quantity):
+        similarity = similarity_evaluator.evaluate(dataset["transcription"][i],
+                                                   dataset["text_description"][i],
+                                                   torch.tensor(dataset["audio"][i]["array"]))
+        print(f"Similarity metrics: {similarity}")
+    similarity_evaluator.visualize()

@@ -1,61 +1,31 @@
-import io
 import random
 
 import librosa
-import pandas as pd
-import requests
-import soundfile as sf
 import torch
+from datasets import Audio
+from datasets import load_dataset
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
 
-class AudioDataset(torch.utils.data.Dataset):
-    def __init__(self, length, random_seed=None):
-        super(AudioDataset, self).__init__()
-        self.X = pd.DataFrame(columns=['transcription', 'transcription_normalised', 'text_description'])
-        self.y = []
-        if random_seed is not None:
-            random.seed(random_seed)
-        offset = random.randint(0, 20000)
-        rows = requests.get(
-            url=f"https://datasets-server.huggingface.co/rows?dataset=reach-vb%2Fjenny_tts_dataset"
-                f"&config=default&split=train&offset={offset}&length={length}"
-        ).json()['rows']
-        rows_with_description = requests.get(
-            url=f"https://datasets-server.huggingface.co/rows?dataset=ylacombe%2Fjenny-tts-10k-tagged&config=default"
-                f"&split=train&offset={offset}&length={length}"
-        ).json()['rows']
-        for i in range(length):
-            audio_response = requests.get(url=rows[i]['row']['audio'][0]['src'])
-            audio_data = sf.read(io.BytesIO(audio_response.content))[0]
-            self.y.append(audio_data)
-            transcription = rows[i]['row']['transcription']
-            transcription_normalized = rows[i]['row']['transcription_normalised']
-            text_description = rows_with_description[i]['row']['text_description']
-            self.X[i] = [transcription, transcription_normalized, text_description]
-
-    def __len__(self):
-        return len(self.y)
-
-    def __getitem__(self, index):
-        row = self.X[index]
-        dict_row = {"transcription": row[0], "transcription_normalised": row[1], "text_description": row[2]}
-        return dict_row, self.y[index]
+def prepare_dataset(tests_quantity: int, random_seed=None):
+    dataset = load_dataset("reach-vb/jenny_tts_dataset", split='train', )
+    dataset = dataset.cast_column("audio", Audio(sampling_rate=16000))
+    dataset_with_description = load_dataset("ylacombe/jenny-tts-10k-tagged", split='train')
+    if random_seed:
+        random.seed(random_seed)
+    offset = random.randint(0, len(dataset) - tests_quantity)
+    return dict(dataset[offset:offset + tests_quantity], **dataset_with_description[offset:offset + tests_quantity])
 
 
-def receive_audios(pred_audio, target_audio):
+def receive_audios(pred_audio: torch.Tensor, target_audio: torch.Tensor, cut_audio: bool = True):
     target_audio = target_audio.to(device)
     pred_audio = torch.from_numpy(librosa.resample(pred_audio.cpu().numpy(), orig_sr=44100, target_sr=16000)).to(
         device)
-    target_audio = torch.from_numpy(
-        librosa.resample(target_audio.cpu().numpy(), orig_sr=48000, target_sr=16000)).to(device)
-    if len(pred_audio) > len(target_audio):
-        dif = len(pred_audio) - len(target_audio)
-        target_audio = torch.cat((target_audio, torch.zeros(dif).to(device)), dim=0)
-    else:
-        dif = len(target_audio) - len(pred_audio)
-        pred_audio = torch.cat((pred_audio, torch.zeros(dif).to(device)), dim=0)
+    if cut_audio:
+        min_len = min(len(pred_audio), len(target_audio))
+        pred_audio = pred_audio[:min_len]
+        target_audio = target_audio[:min_len]
     return pred_audio, target_audio
 
 

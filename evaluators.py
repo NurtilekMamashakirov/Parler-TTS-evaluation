@@ -20,7 +20,7 @@ class DNSMOSEvaluator:
         self.dnsmos = DeepNoiseSuppressionMeanOpinionScore(fs=self.model_tts.config.sampling_rate, personalized=False)
         self.dnsmos_results = []
 
-    def evaluate(self, prompt: str, description: str):
+    def evaluate(self, prompt: str, description: str, save_audio: bool = False):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(device)
@@ -43,7 +43,7 @@ class WEREvaluator:
         self.pipeline_stt = pipeline_stt
         self.word_error_rates = []
 
-    def evaluate(self, prompt: str, description: str):
+    def evaluate(self, prompt: str, description: str, save_audios: bool = False):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).cpu().numpy().squeeze()
@@ -75,9 +75,9 @@ class ObjectiveMetricsEvaluator:
         self.short_time_objective_intelligibility = []
         self.pesq_metric = PerceptualEvaluationSpeechQuality(fs=16000, mode="wb").to(device)
         self.si_sdr_metric = ScaleInvariantSignalDistortionRatio().to(device)
-        self.stoi_metric = ShortTimeObjectiveIntelligibility(fs=16000, extended=False).to(device)
+        self.stoi_metric = ShortTimeObjectiveIntelligibility(fs=16000, extended=True).to(device)
 
-    def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor):
+    def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor, save_audio: bool = False):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         pred_audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(
@@ -102,3 +102,40 @@ class ObjectiveMetricsEvaluator:
         plt.show()
         self.stoi_metric.plot(self.short_time_objective_intelligibility)
         plt.show()
+
+
+class SimilarityEvaluator:
+    def __init__(self, model_tts, tokenizer, model_audio2vec, feature_extractor):
+        self.model_tts = model_tts
+        self.tokenizer = tokenizer
+        self.model_audio2vec = model_audio2vec
+        self.feature_extractor = feature_extractor
+        self.similarity_values = []
+
+    def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor, save_audio: bool = False):
+        input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
+        prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
+        pred_audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(
+            device).squeeze(0)
+        pred_audio, target_audio = receive_audios(pred_audio, target_audio, False)
+        inputs_pred = self.feature_extractor(pred_audio, return_tensors="pt").to(device)
+        embeddings_pred = self.model_audio2vec(**inputs_pred).embeddings.to(device)
+        inputs_target = self.feature_extractor(target_audio, return_tensors="pt")
+        embeddings_target = self.model_audio2vec(**inputs_target).embeddings.to(device)
+        metric = torch.nn.CosineSimilarity(dim=-1)
+        similarity = float(metric(embeddings_pred, embeddings_target))
+        self.similarity_values.append(similarity)
+        return similarity
+
+    def visualize(self):
+        plt.figure(figsize=(12, 6))
+        plt.scatter(np.arange(len(self.similarity_values)), self.similarity_values)
+        plt.title('Similarity to original')
+        plt.xlabel('tests')
+        plt.ylabel('scores')
+        plt.xticks(np.arange(len(self.similarity_values)))
+        plt.grid()
+        plt.show()
+
+    def remove_history(self):
+        self.similarity_values = []
