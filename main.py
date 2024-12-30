@@ -9,11 +9,11 @@ def main():
         "To turn on the device, press and hold the power button for three seconds. Once the light indicator appears, the device",
         "How many times did you rewrite that code? I think it is an excellent example of discipline"
     ]
-    describes = ["Jenny's voice is quite monotone and very clear in this recording. She speaks very slowly."] * len(
+    describes = ["Jenny's voice is quite monotone and very clear in this recording. She speaks very fast."] * len(
         prompts)
     evaluate_objective_metrics(tests_quantity=5)
-    evaluate_wer(prompts, describes)
-    evaluate_dnsmos(prompts, describes)
+    evaluate_wer(write_audios=True)
+    evaluate_dnsmos(write_audios=True)
     evaluate_similarity(tests_quantity=5)
 
 

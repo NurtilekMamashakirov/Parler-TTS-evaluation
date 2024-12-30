@@ -6,7 +6,7 @@ from torchmetrics.audio import PerceptualEvaluationSpeechQuality, ShortTimeObjec
     ScaleInvariantSignalDistortionRatio
 from torchmetrics.audio.dnsmos import DeepNoiseSuppressionMeanOpinionScore
 
-from utils import receive_audios
+from utils import receive_audios, save_audio
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -20,12 +20,14 @@ class DNSMOSEvaluator:
         self.dnsmos = DeepNoiseSuppressionMeanOpinionScore(fs=self.model_tts.config.sampling_rate, personalized=False)
         self.dnsmos_results = []
 
-    def evaluate(self, prompt: str, description: str, save_audio: bool = False):
+    def evaluate(self, prompt: str, description: str, write_audio: bool = False):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
-        audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(device)
+        audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).squeeze(0).to(device)
         metric = self.dnsmos(audio)
         self.dnsmos_results.append(metric)
+        if write_audio:
+            save_audio(audio.cpu().numpy(), self.model_tts.config.sampling_rate)
         return metric
 
     def visualize(self):
@@ -43,13 +45,15 @@ class WEREvaluator:
         self.pipeline_stt = pipeline_stt
         self.word_error_rates = []
 
-    def evaluate(self, prompt: str, description: str, save_audios: bool = False):
+    def evaluate(self, prompt: str, description: str, write_audio: bool = False):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).cpu().numpy().squeeze()
         hypothesis_prompt = self.pipeline_stt(audio)["text"]
         word_error_rate = wer(reference=prompt, hypothesis=hypothesis_prompt)
         self.word_error_rates.append(word_error_rate)
+        if write_audio:
+            save_audio(audio, self.model_tts.config.sampling_rate)
         return word_error_rate
 
     def visualize(self):
@@ -77,7 +81,7 @@ class ObjectiveMetricsEvaluator:
         self.si_sdr_metric = ScaleInvariantSignalDistortionRatio().to(device)
         self.stoi_metric = ShortTimeObjectiveIntelligibility(fs=16000, extended=True).to(device)
 
-    def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor, save_audio: bool = False):
+    def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor, write_audio: bool = False):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         pred_audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(
@@ -93,6 +97,10 @@ class ObjectiveMetricsEvaluator:
 
         stoi = self.stoi_metric(pred_audio, target_audio)
         self.short_time_objective_intelligibility.append(stoi)
+
+        if write_audio:
+            save_audio(pred_audio.cpu().numpy(), 16000)
+
         return {'pesq': pesq, 'si_sdr': si_sdr, 'stoi': stoi}
 
     def visualize(self):
@@ -112,7 +120,7 @@ class SimilarityEvaluator:
         self.feature_extractor = feature_extractor
         self.similarity_values = []
 
-    def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor, save_audio: bool = False):
+    def evaluate(self, prompt: str, description: str, target_audio: torch.Tensor, write_audio: bool = False):
         input_ids = self.tokenizer(description, return_tensors="pt").input_ids.to(device)
         prompt_input_ids = self.tokenizer(prompt, return_tensors="pt").input_ids.to(device)
         pred_audio = self.model_tts.generate(input_ids=input_ids, prompt_input_ids=prompt_input_ids).to(
@@ -125,6 +133,8 @@ class SimilarityEvaluator:
         metric = torch.nn.CosineSimilarity(dim=-1)
         similarity = float(metric(embeddings_pred, embeddings_target))
         self.similarity_values.append(similarity)
+        if write_audio:
+            save_audio(pred_audio.cpu().numpy(), 16000)
         return similarity
 
     def visualize(self):
