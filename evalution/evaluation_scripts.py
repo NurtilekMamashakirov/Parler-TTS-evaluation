@@ -12,13 +12,13 @@ model_tts = ParlerTTSForConditionalGeneration.from_pretrained("parler-tts/parler
 tokenizer = AutoTokenizer.from_pretrained("parler-tts/parler-tts-mini-jenny-30H")
 
 
-def evaluate_dnsmos(prompts: list = None, describes: list = None, write_audios=False) -> None:
+def evaluate_dnsmos(prompts: list = None, describes: list = None, tests_quantity: int = 5, write_audios=False) -> None:
     dnsmos_evaluator = DNSMOSEvaluator(model_tts, tokenizer)
     if prompts is None:
-        prompts_quantity = len(describes) if describes else 5
+        prompts_quantity = len(describes) if describes else tests_quantity
         prompts = generate_prompts_with_gigachat(prompts_quantity)
     if describes is None:
-        describes_quantity = len(prompts) if prompts else 5
+        describes_quantity = len(prompts) if prompts else tests_quantity
         describes = generate_describes_with_gigachat(describes_quantity)
     for prompt, describe in zip(prompts, describes):
         dnsmos_tensor = dnsmos_evaluator.evaluate(prompt, describe, write_audios)
@@ -30,9 +30,12 @@ def evaluate_dnsmos(prompts: list = None, describes: list = None, write_audios=F
     dnsmos_evaluator.visualize()
 
 
-def evaluate_wer(prompts: list = None, describes: list = None, write_audios: bool = False) -> None:
-    model_stt = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-large-v3-turbo", torch_dtype=torch_dtype,
-                                                          low_cpu_mem_usage=True, use_safetensors=True)
+def evaluate_wer(prompts: list = None, describes: list = None, tests_quantity: int = 5,
+                 write_audios: bool = False) -> None:
+    model_stt = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-large-v3-turbo",
+                                                          torch_dtype=torch_dtype,
+                                                          low_cpu_mem_usage=True,
+                                                          use_safetensors=True)
     model_stt.to(device)
     model_stt.generation_config.language = "en"
     processor = AutoProcessor.from_pretrained("openai/whisper-large-v3-turbo")
@@ -46,10 +49,10 @@ def evaluate_wer(prompts: list = None, describes: list = None, write_audios: boo
     )
 
     if prompts is None:
-        prompts_quantity = len(describes) if describes else 5
+        prompts_quantity = len(describes) if describes else tests_quantity
         prompts = generate_prompts_with_gigachat(prompts_quantity)
     if describes is None:
-        describes_quantity = len(prompts) if prompts else 5
+        describes_quantity = len(prompts) if prompts else tests_quantity
         describes = generate_describes_with_gigachat(describes_quantity)
 
     wer_eval = WEREvaluator(model_tts, tokenizer, pipe)
