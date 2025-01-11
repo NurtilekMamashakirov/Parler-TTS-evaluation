@@ -6,7 +6,7 @@ from torchmetrics.audio import PerceptualEvaluationSpeechQuality, ShortTimeObjec
     ScaleInvariantSignalDistortionRatio
 from torchmetrics.audio.dnsmos import DeepNoiseSuppressionMeanOpinionScore
 
-from utils import receive_audios, save_audio
+from evalution.utils import receive_audios, save_audio
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 

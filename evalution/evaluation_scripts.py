@@ -3,8 +3,8 @@ from parler_tts import ParlerTTSForConditionalGeneration
 from transformers import AutoTokenizer, AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline, Wav2Vec2FeatureExtractor, \
     WavLMForXVector
 
-from evaluators import DNSMOSEvaluator, WEREvaluator, ObjectiveMetricsEvaluator, SimilarityEvaluator
-from utils import generate_prompts_with_gigachat, generate_describes_with_gigachat, prepare_dataset
+from evalution.evaluators import DNSMOSEvaluator, WEREvaluator, ObjectiveMetricsEvaluator, SimilarityEvaluator
+from evalution.utils import generate_prompts_with_gigachat, generate_describes_with_gigachat, prepare_dataset
 
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
 torch_dtype = torch.float16 if torch.cuda.is_available() else torch.float32
@@ -12,7 +12,7 @@ model_tts = ParlerTTSForConditionalGeneration.from_pretrained("parler-tts/parler
 tokenizer = AutoTokenizer.from_pretrained("parler-tts/parler-tts-mini-jenny-30H")
 
 
-def evaluate_dnsmos(prompts: list = None, describes: list = None, write_audios=False):
+def evaluate_dnsmos(prompts: list = None, describes: list = None, write_audios=False) -> None:
     dnsmos_evaluator = DNSMOSEvaluator(model_tts, tokenizer)
     if prompts is None:
         prompts_quantity = len(describes) if describes else 5
@@ -30,7 +30,7 @@ def evaluate_dnsmos(prompts: list = None, describes: list = None, write_audios=F
     dnsmos_evaluator.visualize()
 
 
-def evaluate_wer(prompts: list = None, describes: list = None, write_audios: bool = False):
+def evaluate_wer(prompts: list = None, describes: list = None, write_audios: bool = False) -> None:
     model_stt = AutoModelForSpeechSeq2Seq.from_pretrained("openai/whisper-large-v3-turbo", torch_dtype=torch_dtype,
                                                           low_cpu_mem_usage=True, use_safetensors=True)
     model_stt.to(device)
@@ -58,7 +58,7 @@ def evaluate_wer(prompts: list = None, describes: list = None, write_audios: boo
     wer_eval.visualize()
 
 
-def evaluate_objective_metrics(tests_quantity: int, random_seed: int = None, write_audios: bool = False):
+def evaluate_objective_metrics(tests_quantity: int, random_seed: int = None, write_audios: bool = False) -> None:
     dataset = prepare_dataset(tests_quantity, random_seed)
     objective_metrics_evaluator = ObjectiveMetricsEvaluator(model_tts, tokenizer)
     for i in range(tests_quantity):
@@ -73,7 +73,7 @@ def evaluate_objective_metrics(tests_quantity: int, random_seed: int = None, wri
     objective_metrics_evaluator.visualize()
 
 
-def evaluate_similarity(tests_quantity: int, random_seed: int = None, write_audios: bool = False):
+def evaluate_similarity(tests_quantity: int, random_seed: int = None, write_audios: bool = False) -> None:
     dataset = prepare_dataset(tests_quantity, random_seed)
     feature_extractor = Wav2Vec2FeatureExtractor.from_pretrained('microsoft/wavlm-base-sv')
     model = WavLMForXVector.from_pretrained('microsoft/wavlm-base-sv')

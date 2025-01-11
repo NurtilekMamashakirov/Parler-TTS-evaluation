@@ -12,3 +12,4 @@ pesq==0.0.4
 datasets==3.2.0
 pystoi==0.4.1
 python-dotenv==0.21.0
+accelerate==1.2.0
